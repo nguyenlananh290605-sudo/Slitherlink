@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Dynamic Slitherlink - DAA </title>
+    <link rel="stylesheet" href="{{ url_for('Slitherlink.static', filename='css/style.css') }}">
+</head>
+<body>
+<div class="game-container"> <h2>Slitherlink PUZZLE</h2>
+    <div class="subtitle">Logic Puzzle Game</div>
+
+
+    <div class="top-controls">
+
+        <!-- Nút scan ảnh (thêm cạnh btn-new) -->
+        <label class="btn-new" style="cursor:pointer; padding: 10px 18px; background:#e67e22;">
+          📷 Scan Puzzle
+          <input type="file" accept="image/*" capture="environment"
+                 onchange="scanPuzzle(this)" style="display:none">
+        </label>
+        <select id="sizeSelect" onchange="newGame()">
+            <option value="">5x5 Normal</option>
+            <option value="4">5x5 Hard</option>
+            <option value="10">7x7 Normal</option>
+            <option value="11">7x7 Hard</option>
+            <option value="1">10x10 Normal</option>
+            <option value="5">10x10 Hard</option>
+            <option value="2">15x15 Normal</option>
+            <option value="6">15x15 Hard</option>
+            <option value="3">20x20 Normal</option>
+            <option value="7">20x20 Hard</option>
+        </select>
+        <button class="btn-new" onclick="newGame()">🆕 New Puzzle</button>
+        <button class="btn-info" onclick="openHelp()">📖 How to Play</button>
+    </div>
+
+    <div class="zoom-controls">
+        <button onclick="changeZoom(-0.1)">➖</button>
+        <span id="zoom-level">100%</span>
+        <button onclick="changeZoom(0.1)">➕</button>
+    </div>
+
+    <div id="board-wrapper">
+        <div id="board"></div>
+    </div>
+
+    <div class="bottom-controls">
+        <button class="btn-hint" onclick="getHint()">💡 Get Hint</button>
+        <button class="btn-check" onclick="checkDone()">✅ Check Solution</button>
+        <button class="btn-solve" onclick="autoSolveVisualizer()">🤖 Auto Solve</button>
+    </div>
+
+    <p id="status">Loading AI Engine...</p>
+
+    <div id="helpModal" class="modal">
+        <div class="modal-content">
+            <span class="close-btn" onclick="closeHelp()">&times;</span>
+            <h3>📖 How to Play Slitherlink</h3>
+            <ul>
+                <li>Connect adjacent dots with vertical or horizontal lines to form a <b>single, continuous loop</b>.</li>
+                <li>The numbers indicate how many lines must surround that specific cell (0, 1, 2, or 3).</li>
+                <li>Empty cells can be surrounded by any number of lines.</li>
+                <li>The loop never crosses itself and never branches off.</li>
+                <li><b>Mouse Controls:</b>
+                    <br>- <b>Click once:</b> Draw a line (Blue).
+                    <br>- <b>Click twice:</b> Mark an 'X' (Empty space).
+                    <br>- <b>Click three times:</b> Clear the space.
+                </li>
+            </ul>
+        </div>
+    </div>
+    </div>
+
+    <script>
+        let currentSize = 5;
+        let currentBoard = [];
+        let userHoriz = [], userVert = [];
+        let solutionHoriz = null, solutionVert = null;
+        let currentZoom = 1;
+        const statusEl = document.getElementById('status');
+
+        const modal = document.getElementById('helpModal');
+        function openHelp() { modal.style.display = 'flex'; }
+        function closeHelp() { modal.style.display = 'none'; }
+        window.onclick = function(event) { if (event.target == modal) closeHelp(); }
+
+        function changeZoom(delta) {
+            currentZoom += delta;
+            if (currentZoom < 0.5) currentZoom = 0.5;
+            if (currentZoom > 2) currentZoom = 2;
+            document.getElementById('board').style.transform = `scale(${currentZoom})`;
+            document.getElementById('zoom-level').innerText = `${Math.round(currentZoom * 100)}%`;
+        }
+
+        async function newGame() {
+            currentZoom = 1;
+            changeZoom(0);
+
+            const sizeId = document.getElementById('sizeSelect').value;
+            statusEl.innerText = "⏳ Fetching new puzzle from server...";
+            statusEl.style.color = "#f39c12";
+            document.getElementById('board').innerHTML = '';
+            document.querySelector('.btn-solve').disabled = false;
+
+            try {
+                const res = await fetch(`fetch-puzzle/${sizeId}`);
+                const data = await res.json();
+
+                currentSize = data.size;
+                currentBoard = data.board;
+
+                userHoriz = Array(currentSize + 1).fill().map(() => Array(currentSize).fill(0));
+                userVert = Array(currentSize).fill().map(() => Array(currentSize + 1).fill(0));
+                solutionHoriz = null; solutionVert = null;
+
+                render();
+                preFetchSolution();
+            } catch (err) {
+                statusEl.innerText = "❌ Error: Cannot connect to Backend!";
+                statusEl.style.color = "#e74c3c";
+            }
+        }
+
+        function render() {
+            const boardEl = document.getElementById('board');
+            boardEl.innerHTML = '';
+
+            let cellSize = 40;
+            if (currentSize >= 20) cellSize = 22;
+            else if (currentSize >= 10) cellSize = 30;
+
+            document.documentElement.style.setProperty('--cell-size', `${cellSize}px`);
+            boardEl.style.gridTemplateColumns = `repeat(${currentSize}, 6px ${cellSize}px) 6px`;
+
+            for (let r = 0; r <= currentSize; r++) {
+                for (let c = 0; c < currentSize; c++) {
+                    boardEl.innerHTML += `<div class="dot"></div><div id="h-${r}-${c}" class="h-line" onclick="toggle('h',${r},${c})"></div>`;
+                }
+                boardEl.innerHTML += `<div class="dot"></div>`;
+
+                if (r < currentSize) {
+                    for (let c = 0; c < currentSize; c++) {
+                        boardEl.innerHTML += `<div id="v-${r}-${c}" class="v-line" onclick="toggle('v',${r},${c})"></div>`;
+                        const val = currentBoard[r][c];
+                        boardEl.innerHTML += `<div id="cell-${r}-${c}" class="cell">${val === -1 ? '' : val}</div>`;
+                    }
+                    boardEl.innerHTML += `<div id="v-${r}-${currentSize}" class="v-line" onclick="toggle('v',${r},${currentSize})"></div>`;
+                }
+            }
+        }
+
+        function checkErrors() {
+            for (let r = 0; r < currentSize; r++) {
+                for (let c = 0; c < currentSize; c++) {
+                    let target = currentBoard[r][c];
+                    if (target === -1) continue;
+
+                    let count = 0;
+                    if (userHoriz[r][c] === 1) count++;
+                    if (userHoriz[r+1][c] === 1) count++;
+                    if (userVert[r][c] === 1) count++;
+                    if (userVert[r][c+1] === 1) count++;
+
+                    let cellEl = document.getElementById(`cell-${r}-${c}`);
+                    if (cellEl) {
+                        if (count > target) cellEl.classList.add('cell-error');
+                        else cellEl.classList.remove('cell-error');
+                    }
+                }
+            }
+        }
+
+        function toggle(t, r, c) {
+            const el = document.getElementById(`${t}-${r}-${c}`);
+            el.classList.remove('line-ai-filled');
+            let currentState = t === 'h' ? userHoriz[r][c] : userVert[r][c];
+            let newState = currentState === 0 ? 1 : (currentState === 1 ? -1 : 0);
+
+            if (t === 'h') userHoriz[r][c] = newState; else userVert[r][c] = newState;
+
+            el.classList.remove('line-filled', 'line-cross');
+            if (newState === 1) el.classList.add('line-filled');
+            if (newState === -1) el.classList.add('line-cross');
+
+            checkErrors();
+        }
+
+        async function preFetchSolution() {
+            try {
+                const res = await fetch('solve', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ size: currentSize, board: currentBoard })
+                });
+                const data = await res.json();
+
+                if (data.success) {
+                    solutionHoriz = data.horiz; solutionVert = data.vert;
+                    statusEl.innerText = `✅ Ready Solve! (Calculated in ${data.time}s)`;
+                    statusEl.style.color = "#27ae60";
+                } else {
+                    statusEl.innerText = "⚠️ This puzzle might have no solution.";
+                    statusEl.style.color = "#e74c3c";
+                }
+            } catch (err) {
+                statusEl.innerText = "❌ Backend error during solving.";
+            }
+        }
+
+        function getHint() {
+            if (!solutionHoriz) return;
+            let pHints = [];
+            for (let r = 0; r <= currentSize; r++) for (let c = 0; c < currentSize; c++) if (solutionHoriz[r][c] === 1 && userHoriz[r][c] !== 1) pHints.push({ t: 'h', r, c });
+            for (let r = 0; r < currentSize; r++) for (let c = 0; c <= currentSize; c++) if (solutionVert[r][c] === 1 && userVert[r][c] !== 1) pHints.push({ t: 'v', r, c });
+
+            if (pHints.length === 0) {
+                statusEl.innerText = "💡 All lines are drawn! Try checking your solution.";
+                statusEl.style.color = "#3498db";
+                return;
+            }
+            const h = pHints[Math.floor(Math.random() * pHints.length)];
+            if (h.t === 'h') userHoriz[h.r][h.c] = 1; else userVert[h.r][h.c] = 1;
+
+            const el = document.getElementById(`${h.t}-${h.r}-${h.c}`);
+            el.classList.remove('line-cross', 'line-filled'); el.classList.add('line-ai-filled');
+            checkErrors();
+            statusEl.innerText = "💡 Hint applied (Red line)!";
+            statusEl.style.color = "#e67e22";
+        }
+
+        function checkDone() {
+            if (!solutionHoriz) return;
+            let isPerfect = true;
+            for (let r = 0; r <= currentSize; r++) for (let c = 0; c < currentSize; c++) if (solutionHoriz[r][c] === 1 !== (userHoriz[r][c] === 1)) isPerfect = false;
+            for (let r = 0; r < currentSize; r++) for (let c = 0; c <= currentSize; c++) if (solutionVert[r][c] === 1 !== (userVert[r][c] === 1)) isPerfect = false;
+
+            if (isPerfect) { statusEl.innerText = "🎉 AMAZING! Perfect Solution!"; statusEl.style.color = "#27ae60"; }
+            else { statusEl.innerText = "❌ Incorrect or Incomplete. Keep trying!"; statusEl.style.color = "#e74c3c"; }
+        }
+
+        function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+        async function autoSolveVisualizer() {
+            if (!solutionHoriz) return;
+
+            document.querySelector('.btn-solve').disabled = true;
+            statusEl.innerText = "🤖 (DFS Backtracking) is exploring...";
+            statusEl.style.color = "#8e44ad";
+
+            userHoriz = Array(currentSize + 1).fill().map(() => Array(currentSize).fill(0));
+            userVert = Array(currentSize).fill().map(() => Array(currentSize + 1).fill(0));
+            for(let r=0; r<=currentSize; r++) for(let c=0; c<currentSize; c++) document.getElementById(`h-${r}-${c}`).className = 'h-line';
+            for(let r=0; r<currentSize; r++) for(let c=0; c<=currentSize; c++) document.getElementById(`v-${r}-${c}`).className = 'v-line';
+            checkErrors();
+
+            let startR = -1, startC = -1;
+            for(let r=0; r<=currentSize; r++) {
+                for(let c=0; c<currentSize; c++) {
+                    if(solutionHoriz[r][c] === 1) { startR = r; startC = c; break; }
+                }
+                if(startR !== -1) break;
+            }
+
+            let visitedVertices = new Set();
+            let foundLoop = false;
+
+            async function dfs(r, c, prevR, prevC) {
+                if (foundLoop) return;
+
+                let vKey = `${r},${c}`;
+                if (visitedVertices.has(vKey)) {
+                    foundLoop = true;
+                    return;
+                }
+                visitedVertices.add(vKey);
+
+                let allDirections = [
+                    { type: 'v', edgeR: r-1, edgeC: c, nextR: r-1, nextC: c },
+                    { type: 'h', edgeR: r, edgeC: c, nextR: r, nextC: c+1 },
+                    { type: 'v', edgeR: r, edgeC: c, nextR: r+1, nextC: c },
+                    { type: 'h', edgeR: r, edgeC: c-1, nextR: r, nextC: c-1 }
+                ];
+
+                let wrongPaths = [];
+                let correctPath = null;
+
+                for (let d of allDirections) {
+                    if (d.type === 'h' && (d.edgeR < 0 || d.edgeR > currentSize || d.edgeC < 0 || d.edgeC >= currentSize)) continue;
+                    if (d.type === 'v' && (d.edgeR < 0 || d.edgeR >= currentSize || d.edgeC < 0 || d.edgeC > currentSize)) continue;
+                    if (d.nextR === prevR && d.nextC === prevC) continue;
+
+                    let isSolution = (d.type === 'h') ? solutionHoriz[d.edgeR][d.edgeC] === 1 : solutionVert[d.edgeR][d.edgeC] === 1;
+                    if (isSolution) correctPath = d;
+                    else wrongPaths.push(d);
+                }
+
+                let pathsToTry = [];
+                if (wrongPaths.length > 0) pathsToTry.push(wrongPaths[0]);
+                if (correctPath) pathsToTry.push(correctPath);
+
+                for (let path of pathsToTry) {
+                    if (foundLoop) return;
+
+                    let domEl = document.getElementById(`${path.type}-${path.edgeR}-${path.edgeC}`);
+                    let isSolution = (path === correctPath);
+
+                    domEl.className = `${path.type}-line line-exploring`;
+                    if (path.type === 'h') userHoriz[path.edgeR][path.edgeC] = 1; else userVert[path.edgeR][path.edgeC] = 1;
+                    checkErrors();
+
+                    await sleep(60);
+
+                    if (!isSolution) {
+                        domEl.classList.remove('line-exploring');
+                        domEl.classList.add('line-cross');
+                        await sleep(60);
+
+                        domEl.className = `${path.type}-line`;
+                        if (path.type === 'h') userHoriz[path.edgeR][path.edgeC] = 0; else userVert[path.edgeR][path.edgeC] = 0;
+                        checkErrors();
+                    } else {
+                        domEl.classList.remove('line-exploring');
+                        domEl.classList.add('line-ai-filled');
+                        await dfs(path.nextR, path.nextC, r, c);
+                    }
+                }
+            }
+
+            await dfs(startR, startC, -1, -1);
+
+            for(let r=0; r<=currentSize; r++) for(let c=0; c<currentSize; c++) {
+                if (solutionHoriz[r][c] === -1 && userHoriz[r][c] !== 1) document.getElementById(`h-${r}-${c}`).classList.add('line-cross');
+            }
+            for(let r=0; r<currentSize; r++) for(let c=0; c<=currentSize; c++) {
+                if (solutionVert[r][c] === -1 && userVert[r][c] !== 1) document.getElementById(`v-${r}-${c}`).classList.add('line-cross');
+            }
+
+            statusEl.innerText = "🎉Finished!";
+            statusEl.style.color = "#27ae60";
+            document.querySelector('.btn-solve').disabled = false;
+        }
+        async function scanPuzzle(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            statusEl.innerText = "📷 Đang phân tích ảnh...";
+            statusEl.style.color = "#e67e22";
+
+            // Tự động lấy size hiện tại từ giao diện để gửi xuống Backend
+            let expectedSize = 5;
+            const sizeVal = document.getElementById('sizeSelect').value;
+            if (sizeVal === "10" || sizeVal === "11") expectedSize = 7;
+            else if (sizeVal === "1" || sizeVal === "5") expectedSize = 10;
+            else if (sizeVal === "2" || sizeVal === "6") expectedSize = 15;
+            else if (sizeVal === "3" || sizeVal === "7") expectedSize = 20;
+
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('expected_size', expectedSize); // GỬI SIZE XUỐNG
+            try {
+                const res = await fetch('scan-puzzle-ai/', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+
+                if (data.error) {
+                    statusEl.innerText = "❌ " + data.error;
+                    statusEl.style.color = "#e74c3c";
+                    return;
+                }
+
+                currentSize = data.size;
+                currentBoard = data.board;
+                userHoriz = Array(currentSize + 1).fill().map(() => Array(currentSize).fill(0));
+                userVert  = Array(currentSize).fill().map(() => Array(currentSize + 1).fill(0));
+                solutionHoriz = null; solutionVert = null;
+
+                render();
+                preFetchSolution();
+                statusEl.innerText = "✅ Đã nhận diện puzzle từ ảnh!";
+                statusEl.style.color = "#27ae60";
+
+            } catch (err) {
+                statusEl.innerText = "❌ Lỗi kết nối backend!";
+                statusEl.style.color = "#e74c3c";
+            }
+        }
+
+
+        newGame();
+    </script>
+
+</body>
+</html>

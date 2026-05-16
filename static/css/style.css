@@ -1,0 +1,113 @@
+:root {
+    --cell-size: 40px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+    font-family: 'DM Sans', sans-serif;
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+    position: relative;
+    overflow-x: hidden;
+}
+
+/* THÊM BACKGROUND HÌNH NỀN */
+body::before {
+    content: "";
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    z-index: -1;
+    background-image: url("/static/images/hn.jpg"); /* Đảm bảo đường dẫn này đúng */
+    background-size: cover;
+    background-position: center;
+    filter: blur(0.5px) brightness(0.6);
+    transform: scale(1.1);
+}
+h2 { color: #2c3e50; margin-bottom: 5px; }
+.subtitle { color: #7f8c8d; margin-bottom: 20px; font-style: italic; }
+.game-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background: #ffffff;
+    padding: 30px 50px;
+    border-radius: 20px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.05); /* Đổ bóng nhẹ cho sang */
+    max-width: 95vw;
+}
+/* 1. Thanh chọn kích thước (NẰM TRÊN) */
+.top-controls {
+    background: white; padding: 15px 25px; border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 20px;
+    display: flex; gap: 15px; align-items: center; flex-wrap: wrap; justify-content: center;
+}
+select { padding: 10px; border-radius: 5px; border: 1px solid #ccc; font-size: 15px; outline: none; cursor: pointer;}
+
+button { padding: 10px 18px; color: white; border: none; border-radius: 5px; cursor: pointer; font-size: 15px; font-weight: bold; transition: 0.2s; }
+.btn-new { background: #3498db; } .btn-new:hover { background: #2980b9; }
+.btn-info { background: #34495e; } .btn-info:hover { background: #2c3e50; }
+.btn-scan { background: #e67e22; color: white; } .btn-scan:hover { background: #d35400; }
+
+/* THÊM MỚI: CSS CHO ZOOM VÀ BỌC LƯỚI */
+.zoom-controls {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 15px;
+    background: white; padding: 8px 15px; border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
+.zoom-controls button {
+    background: #ecf0f1; color: #2c3e50; padding: 5px 12px; font-size: 18px; border-radius: 4px;
+}
+.zoom-controls button:hover { background: #bdc3c7; }
+#zoom-level { font-weight: bold; width: 50px; text-align: center; color: #2c3e50; }
+
+#board-wrapper {
+    width: 100%; max-width: 90vw; max-height: 65vh; overflow: auto;
+    display: flex; justify-content: center; align-items: center;
+    border: 1px solid #ecf0f1; border-radius: 10px; background: #fff;
+    margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+}
+
+/* 2. Lưới Game */
+#board {
+    display: grid; padding: 25px;
+    transform-origin: center center;
+    transition: transform 0.2s ease;
+}
+
+.dot { width: 6px; height: 6px; background: #2c3e50; border-radius: 50%; margin: auto; }
+.cell { width: var(--cell-size); height: var(--cell-size); display: flex; justify-content: center; align-items: center; font-size: calc(var(--cell-size) * 0.5); font-weight: bold; color: #2c3e50; transition: background-color 0.3s; }
+
+.h-line { width: var(--cell-size); height: 6px; background: #ecf0f1; cursor: pointer; transition: 0.1s; }
+.v-line { width: 6px; height: var(--cell-size); background: #ecf0f1; cursor: pointer; transition: 0.1s; }
+.h-line:hover, .v-line:hover { background: #bdc3c7; }
+
+.line-filled { background: #3498db !important; }
+.line-ai-filled { background: #e74c3c !important; }
+.line-cross { background: transparent !important; position: relative; }
+.line-cross::after { content: '×'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #aaa; font-size: calc(var(--cell-size) * 0.4);}
+
+/* CSS cho Real-time Error Detection & AI Animation */
+.cell-error { background-color: #ffcccc; color: #c0392b !important; border-radius: 4px; }
+.line-exploring { background: #f1c40f !important; box-shadow: 0 0 8px #f1c40f; z-index: 5; }
+
+/* 3. Thanh chức năng (NẰM DƯỚI) */
+.bottom-controls { display: flex; gap: 15px; margin-bottom: 15px; flex-wrap: wrap; justify-content: center; }
+.btn-hint { background: #f39c12; } .btn-hint:hover { background: #e67e22; }
+.btn-check { background: #2ecc71; } .btn-check:hover { background: #27ae60; }
+.btn-solve { background: #9b59b6; } .btn-solve:hover { background: #8e44ad; }
+.btn-solve:disabled { background: #bdc3c7; cursor: not-allowed; }
+
+#status { font-size: 16px; font-weight: bold; color: #34495e; height: 25px; text-align: center;}
+
+/* CSS CHUYÊN DỤNG CHO POPUP HƯỚNG DẪN */
+.modal { display: none; position: fixed; z-index: 10; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); justify-content: center; align-items: center; }
+.modal-content { background-color: #fff; padding: 30px; border-radius: 10px; width: 90%; max-width: 500px; box-shadow: 0 5px 15px rgba(0,0,0,0.3); position: relative; line-height: 1.6; color: #2c3e50; }
+.modal-content h3 { margin-top: 0; color: #2980b9; border-bottom: 2px solid #ecf0f1; padding-bottom: 10px;}
+.close-btn { color: #aaa; position: absolute; top: 15px; right: 20px; font-size: 28px; font-weight: bold; cursor: pointer; }
+.close-btn:hover { color: #e74c3c; }
+.modal-content ul { padding-left: 20px; }
+.modal-content li { margin-bottom: 10px; }
